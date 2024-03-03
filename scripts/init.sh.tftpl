@@ -1,0 +1,57 @@
+#!/bin/sh
+
+set -xe
+
+# Create directories for workspaces.
+mkdir -p /parent-of-workspaces
+
+# Create temporary resources.
+mkdir -p /tmp/coder-devcontainer-builder
+echo <<'EOF'
+  {"runArgs": "coder-${workspace_id}"}
+EOF > /tmp/coder-devcontainer-builder/override.json
+
+# Clone workspace repository (if not exists)
+if [ ! -e /parent-of-workspaces/workspaces/${lower(workspace_name)} ]
+then
+  git clone ${repo} /parent-of-workspaces/workspaces/${lower(workspace_name)}
+fi
+cd /parent-of-workspaces/workspaces/${lower(workspace_name)}
+
+IS_COMPOSE=`node /tmp/coder-devcontainer-builder/is_compose_based.js | tr '\n' ''`
+COMPOSE_PROJECT_NAME=coder-${workspace_id}
+
+if [ "$IS_COMPOSE" = "true" ]
+then
+  devcontainer up\
+    --workspace-folder .\
+    --config ${config}
+
+  trap /tmp/coder-devcontainer-builder/on_sigterm.sh SIGTERM
+
+  devcontainer exec\
+    --workspace-folder .\
+    --config ${config}\
+    sh -s <<'EOF'
+      #!/bin/sh
+      CODER_AGENT_TOKEN=${agent_token}
+      ${agent_script}
+    EOF
+else
+  devcontainer up\
+    --workspace-folder .\
+    --config ${config}\
+    --override-config /tmp/coder-devcontainer-builder/override.json
+
+  trap /tmp/coder-devcontainer-builder/on_sigterm.sh SIGTERM
+
+  devcontainer exec\
+    --workspace-folder .\
+    --config ${config}\
+    --override-config /tmp/coder-devcontainer-builder/override.json\
+    sh -s <<'EOF'
+      #!/bin/sh
+      CODER_AGENT_TOKEN=${agent_token}
+      ${agent_script}
+    EOF
+fi

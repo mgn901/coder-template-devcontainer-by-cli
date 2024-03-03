@@ -27,6 +27,7 @@ data "coder_parameter" "repo" {
   order        = 1
   name         = "repo"
   display_name = "Git Repository URL"
+  type         = "string"
   default      = ""
   mutable      = true
 }
@@ -35,6 +36,7 @@ data "coder_parameter" "config" {
   order        = 2
   name         = "config"
   display_name = "Path to devcontainer.json"
+  type         = "string"
   default      = ".devcontainer/devcontainer.json"
   mutable      = true
 }
@@ -84,78 +86,23 @@ module "code-server" {
 module "vscode" {
   source   = "registry.coder.com/modules/vscode-desktop/coder"
   version  = "1.0.2"
-  agent_id = coder_agent.example.id
+  agent_id = coder_agent.main.id
   folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
 }
 
 locals {
-  exec_script  = <<EOT
-    #!/bin/sh
-    set -xe
-    cd /workspaces/${lower(data.coder_workspace.me.name)}
-
-    IS_COMPOSE=`cat ${lower(data.coder_parameter.config)} | node /scripts/is_compose_based.js`
-
-    if [ $IS_COMPOSE = true ]; then
-      docker compose -p coder-${data.coder_workspace.me.id} down
-    else
-      docker container rm coder-${data.coder_workspace.me.id}
-    fi
-  EOT
-  build_script = <<EOT
-    #!/bin/sh
-
-    set -xe
-
-    mkdir -p /parent-of-workspaces
-    mkdir -p /tmp/coder-devcontainer-builder
-    git clone ${data.coder_parameter.repo} /parent-of-workspaces/workspaces/${lower(data.coder_workspace.me.name)}
-    cd /parent-of-workspaces/workspaces/${lower(data.coder_workspace.me.name)}
-
-    echo {\"runArgs\": \"coder-${data.coder_workspace.me.id}\"} > /tmp/coder-devcontainer-builder/override.json
-
-    IS_COMPOSE=`cat ${lower(data.coder_parameter.config)} | node /scripts/is_compose_based.js`
-    COMPOSE_PROJECT_NAME=coder-${data.coder_workspace.me.id}
-
-    if [ $IS_COMPOSE = true ]; then
-      devcontainer up\
-        --workspace-folder .\
-        --config ${data.coder_parameter.config}
-
-      sh -s <<EOF
-        ${local.exec_script}
-      EOF &\
-      devcontainer exec\
-        --workspace-folder .\
-        --config ${data.coder_parameter.config}\
-        sh -s <<EOF
-        ${coder_agent.main.init_script}
-        EOF
-    else
-      devcontainer up\
-        --workspace-folder .\
-        --config ${data.coder_parameter.config}
-        --override-config /tmp/coder-devcontainer-builder/override.json
-
-      sh -s <<EOF
-        ${local.exec_script}
-      EOF &\
-      devcontainer exec\
-        --workspace-folder .\
-        --config ${data.coder_parameter.config}\
-        --override-config /tmp/coder-devcontainer-builder/override.json
-        sh -s <<EOF
-        #!/bin/sh
-        CODER_AGENT_TOKEN=${coder_agent.main.token}
-        ${coder_agent.main.init_script}
-        EOF
-    fi
-  EOT
+  init_script = templatefile("${path.module}", {
+    workspace_id   = data.coder_workspace.me.id
+    workspace_name = lower(data.coder_workspace.me.name)
+    config         = data.coder_parameter.config.value
+    agent_token    = coder_agent.main.token
+    agent_script   = coder_agent.main.init_script
+  })
 }
 
 resource "docker_image" "builder" {
   build {
-    context    = "."
+    context    = "${path.module}"
     dockerfile = "Dockerfile"
   }
   name = "registry.mgn901.com:5000/coder-devcontainer-builder"
@@ -165,18 +112,12 @@ resource "docker_container" "builder" {
   count   = data.coder_workspace.me.start_count
   image   = docker_image.builder.name
   name    = "coder-${data.coder_workspace.me.id}-builder"
-  command = ["sh", "-c", local.build_script]
+  command = ["sh", "-s", "'${local.init_script}'"]
 
   volumes {
     volume_name    = docker_volume.main.name
     container_path = "/parent-of-workspaces"
     read_only      = false
-  }
-
-  volumes {
-    host_path      = "./scripts"
-    container_path = "/scripts"
-    read_only      = true
   }
 
   volumes {
