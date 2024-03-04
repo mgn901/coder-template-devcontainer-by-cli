@@ -79,7 +79,7 @@ fi
 # If using EXTERNAL_VOLUME
 if [ ! "$EXTERNAL_VOLUME" = "" ] && [ "`docker volume ls -q | grep $${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME} | tr -d '\n'`" = "" ];
 then
-  docker volume create "coder-$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}"
+  docker volume create "$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}"
   docker run \
     --rm \
     -v "coder-$WORKSPACE_ID:/tmp/workspaces" \
