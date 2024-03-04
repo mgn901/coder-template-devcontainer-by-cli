@@ -1,57 +1,106 @@
 #!/bin/sh
 
+echo "STARTING..."
+
 set -xe
 
+WORKSPACE_ID=${workspace_id}
+WORKSPACE_NAME=${"${workspace_name}-${workspace_id}"}
+REPO=${repo}
+DEVCONTAINER_CONFIG=${config}
+EXTERNAL_VOLUME=${external_volume}
+AGENT_TOKEN=${agent_token}
+WORKSPACE_DIRECTORY_NAME="coder-$WORKSPACE_NAME-$WORKSPACE_ID"
+
 # Create directories for workspaces.
-mkdir -p /parent-of-workspaces
+mkdir -p /workspaces
 
 # Create temporary resources.
 mkdir -p /tmp/coder-devcontainer-builder
-echo <<'EOF'
-  {"runArgs": "coder-${workspace_id}"}
-EOF > /tmp/coder-devcontainer-builder/override.json
+cat <<'EOF0' > /tmp/coder-devcontainer-builder/is_compose_based.js
+  (() => {
+    try {
+      const config = require('jsonc-parser').parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+      if ('dockerComposeFile' in config) {
+        console.log('true');
+      } else {
+        console.log('false');
+      }
+    } catch (error) {
+      console.error("ERROR: devcontainer.json is invalid or not found");
+      console.error(error.message);
+      process.exit(1);
+    }
+  })();
+EOF0
+
+cat <<EOF0 > /tmp/coder-devcontainer-builder/override_config.js
+  (() => {
+    try {
+      const config = require('jsonc-parser').parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+      if ('dockerComposeFile' in config) {
+        console.log(JSON.stringify({
+          ...config,
+          workspaceMount: "type=volume,source=coder-$WORKSPACE_ID,target=/workspaces,type=volume"
+        }));
+      } else {
+        console.log(JSON.stringify({
+          ...config,
+          runArgs: "--name coder-$WORKSPACE_ID",
+          workspaceMount: "type=volume,source=coder-$WORKSPACE_ID,target=/workspaces,type=volume"
+        }));
+      }
+    } catch (error) {
+      console.error("ERROR: devcontainer.json is invalid or not found");
+      console.error(error.message);
+      process.exit(1);
+    }
+  })();
+EOF0
+
+cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh
+  #!/bin/sh
+  CODER_AGENT_TOKEN=$AGENT_TOKEN
+
+EOF0
+
+cat <<'EOF0' > /tmp/coder-devcontainer-builder/on_devcontainer_start.sh
+  ${agent_script}
+EOF0
+
+chmod +x /tmp/coder-devcontainer-builder/on_sigterm.sh
 
 # Clone workspace repository (if not exists)
-if [ ! -e /parent-of-workspaces/workspaces/${lower(workspace_name)} ]
+if [ ! -e "/workspaces/$WORKSPACE_DIRECTORY_NAME" ]
 then
-  git clone ${repo} /parent-of-workspaces/workspaces/${lower(workspace_name)}
+  git clone --depth 1 "$REPO" "/workspaces/$WORKSPACE_DIRECTORY_NAME"
 fi
-cd /parent-of-workspaces/workspaces/${lower(workspace_name)}
 
-IS_COMPOSE=`node /tmp/coder-devcontainer-builder/is_compose_based.js | tr '\n' ''`
-COMPOSE_PROJECT_NAME=coder-${workspace_id}
-
-if [ "$IS_COMPOSE" = "true" ]
+# If using EXTERNAL_VOLUME
+if [ ! "$EXTERNAL_VOLUME" = "" ] && [ "`docker volume ls -q | grep coder-$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME} | tr -d '\n'`" = "" ];
 then
-  devcontainer up\
-    --workspace-folder .\
-    --config ${config}
-
-  trap /tmp/coder-devcontainer-builder/on_sigterm.sh SIGTERM
-
-  devcontainer exec\
-    --workspace-folder .\
-    --config ${config}\
-    sh -s <<'EOF'
-      #!/bin/sh
-      CODER_AGENT_TOKEN=${agent_token}
-      ${agent_script}
-    EOF
-else
-  devcontainer up\
-    --workspace-folder .\
-    --config ${config}\
-    --override-config /tmp/coder-devcontainer-builder/override.json
-
-  trap /tmp/coder-devcontainer-builder/on_sigterm.sh SIGTERM
-
-  devcontainer exec\
-    --workspace-folder .\
-    --config ${config}\
-    --override-config /tmp/coder-devcontainer-builder/override.json\
-    sh -s <<'EOF'
-      #!/bin/sh
-      CODER_AGENT_TOKEN=${agent_token}
-      ${agent_script}
-    EOF
+  docker volume create "coder-$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}"
+  docker run \
+    --rm \
+    -v "coder-$WORKSPACE_ID:/tmp/workspaces" \
+    -v "coder-$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}:/workspaces" \
+    alpine \
+    sh -c "if [ ! -e "/workspaces/$WORKSPACE_DIRECTORY_NAME" ]; then cp -a /tmp/workspaces/$WORKSPACE_DIRECTORY_NAME /workspaces/$WORKSPACE_DIRECTORY_NAME; fi"
 fi
+
+cd "/workspaces/$WORKSPACE_DIRECTORY_NAME"
+
+cat "./$DEVCONTAINER_CONFIG" | node /tmp/coder-devcontainer-builder/override_config.js > /tmp/coder-devcontainer-builder/override.json
+
+devcontainer up \
+  --workspace-folder . \
+  --config "$DEVCONTAINER_CONFIG" \
+  --override-config /tmp/coder-devcontainer-builder/override.json \
+
+trap "/tmp/coder-devcontainer-builder/on_sigterm.sh $WORKSPACE_NAME $DEVCONTAINER_CONFIG $WORKSPACE_DIRECTORY_NAME" SIGTERM
+
+devcontainer exec \
+  --workspace-folder . \
+  --config "$DEVCONTAINER_CONFIG" \
+  --override-config /tmp/coder-devcontainer-builder/override.json \
+  sh -c "`cat /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh /tmp/coder-devcontainer-builder/on_devcontainer_start.sh`"
