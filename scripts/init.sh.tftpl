@@ -5,12 +5,11 @@ echo "STARTING..."
 set -xe
 
 WORKSPACE_ID=${workspace_id}
-WORKSPACE_NAME=${"${workspace_name}-${workspace_id}"}
+WORKSPACE_DIRECTORY_NAME=${"coder-${workspace_name}-${workspace_id}"}
 REPO=${repo}
 DEVCONTAINER_CONFIG=${config}
 EXTERNAL_VOLUME=${external_volume}
 AGENT_TOKEN=${agent_token}
-WORKSPACE_DIRECTORY_NAME="coder-$WORKSPACE_NAME-$WORKSPACE_ID"
 
 # Create directories for workspaces.
 mkdir -p /workspaces
@@ -60,7 +59,7 @@ EOF0
 
 cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh
   #!/bin/sh
-  CODER_AGENT_TOKEN=$AGENT_TOKEN
+  export CODER_AGENT_TOKEN=$AGENT_TOKEN
 
 EOF0
 
@@ -97,7 +96,7 @@ devcontainer up \
   --config "$DEVCONTAINER_CONFIG" \
   --override-config /tmp/coder-devcontainer-builder/override.json \
 
-trap "/tmp/coder-devcontainer-builder/on_sigterm.sh $WORKSPACE_NAME $DEVCONTAINER_CONFIG $WORKSPACE_DIRECTORY_NAME" SIGTERM
+trap "/tmp/coder-devcontainer-builder/on_sigterm.sh $WORKSPACE_DIRECTORY_NAME $DEVCONTAINER_CONFIG" SIGTERM
 
 devcontainer exec \
   --workspace-folder . \
