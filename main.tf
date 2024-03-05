@@ -19,10 +19,6 @@ data "coder_provisioner" "me" {}
 
 data "coder_workspace" "me" {}
 
-variable "docker-sock" {
-  description = "Path to docker.sock"
-}
-
 data "coder_parameter" "repo" {
   order        = 1
   name         = "repo"
@@ -156,15 +152,11 @@ resource "docker_container" "builder" {
   name    = "coder-${data.coder_workspace.me.id}-builder"
   command = ["sh", "-c", "${local.init_script}"]
 
+  privileged = true
+
   volumes {
     volume_name    = docker_volume.main.name
     container_path = "/workspaces"
-    read_only      = false
-  }
-
-  volumes {
-    host_path      = var.docker-sock
-    container_path = "/var/run/docker.sock"
     read_only      = false
   }
 

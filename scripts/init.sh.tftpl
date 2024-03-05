@@ -11,6 +11,7 @@ DEVCONTAINER_CONFIG=${config}
 EXTERNAL_VOLUME=${external_volume}
 AGENT_TOKEN=${agent_token}
 WORKSPACE_DIRECTORY_NAME="coder-$WORKSPACE_NAME-$WORKSPACE_ID"
+COMPOSE_PROJECT_NAME="coder-$WORKSPACE_NAME-$WORKSPACE_ID"
 
 # Create directories for workspaces.
 mkdir -p /workspaces
