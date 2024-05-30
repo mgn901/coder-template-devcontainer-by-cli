@@ -4,11 +4,12 @@ echo "STARTING..."
 
 set -xe
 
-WORKSPACE_ID=${workspace_id}
-WORKSPACE_DIRECTORY_NAME=${"coder-${workspace_name}-${workspace_id}"}
-REPO=${repo}
-DEVCONTAINER_CONFIG=${config}
-EXTERNAL_VOLUME=${external_volume}
+WORKSPACE_NAME=${workspace_name}
+REPO_OWNER_NAME=${repo_owner_name}
+REPO_NAME=${repo_name}
+BRANCH_NAME=${branch_name}
+GITHUB_AUTHENTICATION_TOKEN=${github_authentication_token}
+CONFIG_PATH=${config_path}
 AGENT_TOKEN=${agent_token}
 
 # Create directories for workspaces.
@@ -16,46 +17,6 @@ mkdir -p /workspaces
 
 # Create temporary resources.
 mkdir -p /tmp/coder-devcontainer-builder
-cat <<'EOF0' > /tmp/coder-devcontainer-builder/is_compose_based.js
-  (() => {
-    try {
-      const config = require('jsonc-parser').parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
-      if ('dockerComposeFile' in config) {
-        console.log('true');
-      } else {
-        console.log('false');
-      }
-    } catch (error) {
-      console.error("ERROR: devcontainer.json is invalid or not found");
-      console.error(error.message);
-      process.exit(1);
-    }
-  })();
-EOF0
-
-cat <<EOF0 > /tmp/coder-devcontainer-builder/override_config.js
-  (() => {
-    try {
-      const config = require('jsonc-parser').parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
-      if ('dockerComposeFile' in config) {
-        console.log(JSON.stringify({
-          ...config,
-          workspaceMount: "type=volume,source=coder-$WORKSPACE_ID,target=/workspaces,type=volume"
-        }));
-      } else {
-        console.log(JSON.stringify({
-          ...config,
-          runArgs: "--name coder-$WORKSPACE_ID",
-          workspaceMount: "type=volume,source=coder-$WORKSPACE_ID,target=/workspaces,type=volume"
-        }));
-      }
-    } catch (error) {
-      console.error("ERROR: devcontainer.json is invalid or not found");
-      console.error(error.message);
-      process.exit(1);
-    }
-  })();
-EOF0
 
 cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh
   #!/bin/sh
@@ -70,36 +31,20 @@ EOF0
 chmod +x /tmp/coder-devcontainer-builder/on_sigterm.sh
 
 # Clone workspace repository (if not exists)
-if [ ! -e "/workspaces/$WORKSPACE_DIRECTORY_NAME" ]
+if [ ! -e "/workspaces/$WORKSPACE_NAME" ]
 then
-  git clone --depth 1 "$REPO" "/workspaces/$WORKSPACE_DIRECTORY_NAME"
+  git clone --branch $BRANCH_NAME --depth 1 "https://$GITHUB_AUTHENTICATION_TOKEN@github.com/$REPO_OWNER_NAME/$REPO_NAME.git" "/workspaces/$WORKSPACE_NAME"
+  cd "/workspaces/$WORKSPACE_NAME"
+  git remote set-url origin https://github.com/$REPO_OWNER_NAME/$REPO_NAME.git
 fi
 
-# If using EXTERNAL_VOLUME
-if [ ! "$EXTERNAL_VOLUME" = "" ] && [ "`docker volume ls -q | grep $${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME} | tr -d '\n'`" = "" ];
-then
-  docker volume create "$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}"
-  docker run \
-    --rm \
-    -v "coder-$WORKSPACE_ID:/tmp/workspaces" \
-    -v "$${WORKSPACE_DIRECTORY_NAME}_devcontainer_$${EXTERNAL_VOLUME}:/workspaces" \
-    alpine \
-    sh -c "if [ ! -e "/workspaces/$WORKSPACE_DIRECTORY_NAME" ]; then cp -a /tmp/workspaces/$WORKSPACE_DIRECTORY_NAME /workspaces/$WORKSPACE_DIRECTORY_NAME; fi"
-fi
-
-cd "/workspaces/$WORKSPACE_DIRECTORY_NAME"
-
-cat "./$DEVCONTAINER_CONFIG" | node /tmp/coder-devcontainer-builder/override_config.js > /tmp/coder-devcontainer-builder/override.json
+cd "/workspaces/$WORKSPACE_NAME"
 
 devcontainer up \
   --workspace-folder . \
-  --config "$DEVCONTAINER_CONFIG" \
-  --override-config /tmp/coder-devcontainer-builder/override.json \
-
-trap "/tmp/coder-devcontainer-builder/on_sigterm.sh $WORKSPACE_DIRECTORY_NAME $DEVCONTAINER_CONFIG" SIGTERM
+  --config "$CONFIG_PATH" \
 
 devcontainer exec \
   --workspace-folder . \
-  --config "$DEVCONTAINER_CONFIG" \
-  --override-config /tmp/coder-devcontainer-builder/override.json \
+  --config "$CONFIG_PATH" \
   sh -c "`cat /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh /tmp/coder-devcontainer-builder/on_devcontainer_start.sh`"
