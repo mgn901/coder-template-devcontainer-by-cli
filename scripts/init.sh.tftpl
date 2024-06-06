@@ -3,6 +3,7 @@
 echo "STARTING..."
 
 set -xe
+unset DOCKER_HOST
 
 WORKSPACE_NAME=${workspace_name}
 REPO_OWNER_NAME=${repo_owner_name}
@@ -11,6 +12,16 @@ BRANCH_NAME=${branch_name}
 GITHUB_AUTHENTICATION_TOKEN=${github_authentication_token}
 CONFIG_PATH=${config_path}
 AGENT_TOKEN=${agent_token}
+
+if [ ! `docker stats --no-stream` ]; then
+  dockerd &
+
+  while [ ! `docker stats --no-stream` ]; do
+    # Docker takes a few seconds to initialize
+    echo "Waiting for Docker to launch..."
+    sleep 1
+  done
+fi
 
 # Create directories for workspaces.
 mkdir -p /workspaces
@@ -27,8 +38,6 @@ EOF0
 cat <<'EOF0' > /tmp/coder-devcontainer-builder/on_devcontainer_start.sh
   ${agent_script}
 EOF0
-
-chmod +x /tmp/coder-devcontainer-builder/on_sigterm.sh
 
 # Clone workspace repository (if not exists)
 if [ ! -e "/workspaces/$WORKSPACE_NAME" ]

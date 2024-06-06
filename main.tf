@@ -86,7 +86,7 @@ data "coder_external_auth" "github" {
 }
 
 # Resource Definitions
-resource "coder_agent" "main" {
+resource "coder_agent" "workspace" {
   arch = data.coder_provisioner.me.arch
   os   = data.coder_provisioner.me.os
   dir  = "/workspaces/${lower(data.coder_workspace.me.name)}"
@@ -109,14 +109,14 @@ resource "coder_agent" "main" {
 module "code-server" {
   source   = "registry.coder.com/modules/code-server/coder"
   version  = "1.0.5"
-  agent_id = coder_agent.main.id
+  agent_id = coder_agent.workspace.id
   folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
 }
 
 module "vscode" {
   source   = "registry.coder.com/modules/vscode-desktop/coder"
   version  = "1.0.2"
-  agent_id = coder_agent.main.id
+  agent_id = coder_agent.workspace.id
   folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
 }
 
@@ -129,8 +129,8 @@ locals {
     branch_name                 = data.coder_parameter.branch_name.value
     github_authentication_token = data.coder_external_auth.github.access_token
     config_path                 = data.coder_parameter.config_path.value
-    agent_token                 = coder_agent.main.token
-    agent_script                = coder_agent.main.init_script
+    agent_token                 = coder_agent.workspace.token
+    agent_script                = coder_agent.workspace.init_script
   })
 }
 
@@ -146,6 +146,9 @@ resource "docker_container" "workspace" {
   image   = docker_image.workspace.name
   name    = "coder-workspace-${data.coder_workspace.me.id}"
   command = ["sh", "-c", "${local.init_script}"]
+  env = [
+    "DOCKER_TLS_CERTDIR=/certs"
+  ]
   labels {
     label = "com.mgn901.coder-template-devcontainer-by-cli.owner_id"
     value = data.coder_workspace.me.owner_id
