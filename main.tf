@@ -128,7 +128,7 @@ locals {
     repo_name                   = data.coder_parameter.repo_name.value
     branch_name                 = data.coder_parameter.branch_name.value
     github_authentication_token = data.coder_external_auth.github.access_token
-    config_path                 = data.coder_parameter.config_path.valu
+    config_path                 = data.coder_parameter.config_path.value
     agent_token                 = coder_agent.main.token
     agent_script                = coder_agent.main.init_script
   })
