@@ -43,7 +43,7 @@ data "coder_parameter" "repo_owner_name" {
 }
 
 data "coder_parameter" "repo_name" {
-  order        = 1
+  order        = 2
   name         = "repo_name"
   display_name = "Git Repository Name"
   type         = "string"
@@ -56,7 +56,7 @@ data "coder_parameter" "repo_name" {
 }
 
 data "coder_parameter" "branch_name" {
-  order        = 1
+  order        = 3
   name         = "branch_name"
   display_name = "Git Branch Name"
   type         = "string"
@@ -69,7 +69,7 @@ data "coder_parameter" "branch_name" {
 }
 
 data "coder_parameter" "config_path" {
-  order        = 2
+  order        = 4
   name         = "config_path"
   display_name = "Path to devcontainer.json"
   type         = "string"
