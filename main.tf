@@ -104,13 +104,19 @@ resource "coder_agent" "workspace" {
     interval     = 10
     timeout      = 1
   }
+  order = 1
 }
 
-module "code-server" {
-  source   = "registry.coder.com/modules/code-server/coder"
-  version  = "1.0.5"
-  agent_id = coder_agent.workspace.id
-  folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
+resource "coder_agent" "builder" {
+  arch            = data.coder_provisioner.me.arch
+  os              = data.coder_provisioner.me.os
+  startup_script  = local.builder_startup_script
+  shutdown_script = local.builder_shutdown_script
+  order           = 2
+  display_apps {
+    vscode = false
+    vscode_insiders = false
+  }
 }
 
 module "vscode" {
@@ -120,18 +126,26 @@ module "vscode" {
   folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
 }
 
+module "code-server" {
+  source   = "registry.coder.com/modules/code-server/coder"
+  version  = "1.0.5"
+  agent_id = coder_agent.workspace.id
+  folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
+}
+
 # Underlying Resources
 locals {
-  init_script = templatefile("${path.module}/scripts/init.sh.tftpl", {
+  builder_startup_script = templatefile("${path.module}/scripts/startup.sh.tftpl", {
     workspace_name              = lower(data.coder_workspace.me.name)
     repo_owner_name             = data.coder_parameter.repo_owner_name.value
     repo_name                   = data.coder_parameter.repo_name.value
     branch_name                 = data.coder_parameter.branch_name.value
     github_authentication_token = data.coder_external_auth.github.access_token
     config_path                 = data.coder_parameter.config_path.value
-    agent_token                 = coder_agent.workspace.token
-    agent_script                = coder_agent.workspace.init_script
+    workspace_agent_token       = coder_agent.workspace.token
+    workspace_agent_script      = coder_agent.workspace.init_script
   })
+  builder_shutdown_script = file("${path.module}/scripts/shutdown.sh")
 }
 
 resource "docker_image" "workspace" {
@@ -173,7 +187,7 @@ resource "docker_container" "workspace" {
   count   = data.coder_workspace.me.start_count
   image   = docker_image.workspace.name
   name    = "coder-workspace-${data.coder_workspace.me.id}"
-  command = ["sh", "-c", "${local.init_script}"]
+  command = ["sh", "-c", "${coder_agent.builder.startup_script}"]
   env = [
     "DOCKER_TLS_CERTDIR=/certs"
   ]

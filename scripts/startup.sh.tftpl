@@ -1,7 +1,5 @@
 #!/bin/sh
 
-echo "STARTING..."
-
 set -xe
 unset DOCKER_HOST
 
@@ -11,7 +9,7 @@ REPO_NAME=${repo_name}
 BRANCH_NAME=${branch_name}
 GITHUB_AUTHENTICATION_TOKEN=${github_authentication_token}
 CONFIG_PATH=${config_path}
-AGENT_TOKEN=${agent_token}
+WORKSPACE_AGENT_TOKEN=${workspace_agent_token}
 
 if [ ! `docker stats --no-stream` ]; then
   dockerd &
@@ -31,12 +29,12 @@ mkdir -p /tmp/coder-devcontainer-builder
 
 cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh
   #!/bin/sh
-  export CODER_AGENT_TOKEN=$AGENT_TOKEN
+  export CODER_WORKSPACE_AGENT_TOKEN=$WORKSPACE_AGENT_TOKEN
 
 EOF0
 
 cat <<'EOF0' > /tmp/coder-devcontainer-builder/on_devcontainer_start.sh
-  ${agent_script}
+  ${workspace_agent_script}
 EOF0
 
 # Clone workspace repository (if not exists)
@@ -59,3 +57,5 @@ devcontainer exec \
   --workspace-folder . \
   --config "$CONFIG_PATH" \
   sh -c "`cat /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh /tmp/coder-devcontainer-builder/on_devcontainer_start.sh`"
+
+exit 0
