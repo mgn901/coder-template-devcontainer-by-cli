@@ -140,6 +140,9 @@ resource "docker_image" "workspace" {
     context    = path.module
     dockerfile = "Dockerfile"
   }
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "docker_container" "workspace" {
