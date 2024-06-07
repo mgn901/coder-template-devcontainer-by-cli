@@ -105,37 +105,20 @@ resource "coder_agent" "workspace" {
     timeout      = 1
   }
   order = 1
+  display_apps {
+    vscode = true
+    vscode_insiders = false
+    web_terminal = true
+    ssh_helper = true
+    port_forwarding_helper = true
+  }
 }
 
 resource "coder_agent" "builder" {
   arch            = data.coder_provisioner.me.arch
   os              = data.coder_provisioner.me.os
-  startup_script  = local.builder_startup_script
-  shutdown_script = local.builder_shutdown_script
   order           = 2
-  display_apps {
-    vscode = false
-    vscode_insiders = false
-  }
-}
-
-module "vscode" {
-  source   = "registry.coder.com/modules/vscode-desktop/coder"
-  version  = "1.0.2"
-  agent_id = coder_agent.workspace.id
-  folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
-}
-
-module "code-server" {
-  source   = "registry.coder.com/modules/code-server/coder"
-  version  = "1.0.5"
-  agent_id = coder_agent.workspace.id
-  folder   = "/workspaces/${lower(data.coder_workspace.me.name)}"
-}
-
-# Underlying Resources
-locals {
-  builder_startup_script = templatefile("${path.module}/scripts/startup.sh.tftpl", {
+  startup_script = templatefile("${path.module}/scripts/startup.sh.tftpl", {
     workspace_name              = lower(data.coder_workspace.me.name)
     repo_owner_name             = data.coder_parameter.repo_owner_name.value
     repo_name                   = data.coder_parameter.repo_name.value
@@ -145,7 +128,21 @@ locals {
     workspace_agent_token       = coder_agent.workspace.token
     workspace_agent_script      = coder_agent.workspace.init_script
   })
-  builder_shutdown_script = file("${path.module}/scripts/shutdown.sh")
+  startup_script_behavior = "blocking"
+  display_apps {
+    vscode = false
+    vscode_insiders = false
+    web_terminal = false
+    ssh_helper = false
+    port_forwarding_helper = false
+  }
+}
+
+resource "coder_script" "builder_shutdown" {
+  agent_id = coder_agent.builder.id
+  display_name = "Builder: Dev Container Shutdown Process"
+  run_on_stop = true
+  script = file("${path.module}/scripts/shutdown.sh")
 }
 
 resource "docker_image" "workspace" {
@@ -187,8 +184,9 @@ resource "docker_container" "workspace" {
   count   = data.coder_workspace.me.start_count
   image   = docker_image.workspace.name
   name    = "coder-workspace-${data.coder_workspace.me.id}"
-  command = ["sh", "-c", "${coder_agent.builder.startup_script}"]
+  command = ["sh", "-c", "${coder_agent.builder.init_script}"]
   env = [
+    "CODER_AGENT_TOKEN=${coder_agent.builder.token}",
     "DOCKER_TLS_CERTDIR=/certs"
   ]
   volumes {
