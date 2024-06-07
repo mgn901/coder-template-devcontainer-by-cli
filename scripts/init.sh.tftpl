@@ -45,6 +45,8 @@ then
   git clone --branch $BRANCH_NAME --depth 1 "https://$GITHUB_AUTHENTICATION_TOKEN@github.com/$REPO_OWNER_NAME/$REPO_NAME.git" "/workspaces/$WORKSPACE_NAME"
   cd "/workspaces/$WORKSPACE_NAME"
   git remote set-url origin https://github.com/$REPO_OWNER_NAME/$REPO_NAME.git
+  chown -R 1000 .
+  chgrp -R 1000 .
 fi
 
 cd "/workspaces/$WORKSPACE_NAME"
