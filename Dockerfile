@@ -1,6 +1,6 @@
 FROM docker:dind
 
-COPY ./scripts /tmp/coder-devcontainer-builder
+RUN mkdir -p /tmp/coder-devcontainer-builder
 
 WORKDIR /tmp/coder-devcontainer-builder
 
