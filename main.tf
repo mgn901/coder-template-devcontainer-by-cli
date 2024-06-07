@@ -145,13 +145,46 @@ resource "docker_image" "workspace" {
   }
 }
 
+resource "docker_volume" "workspace" {
+  name = "coder-workspace-${data.coder_workspace.me.id}"
+  labels {
+    label = "com.mgn901.coder-template-devcontainer-by-cli.owner_id"
+    value = data.coder_workspace.me.owner_id
+  }
+  labels {
+    label = "com.mgn901.coder-template-devcontainer-by-cli.workspace_id"
+    value = data.coder_workspace.me.id
+  }
+}
+
+resource "docker_volume" "docker_data" {
+  name = "coder-docker-data-${data.coder_workspace.me.id}"
+  labels {
+    label = "com.mgn901.coder-template-devcontainer-by-cli.owner_id"
+    value = data.coder_workspace.me.owner_id
+  }
+  labels {
+    label = "com.mgn901.coder-template-devcontainer-by-cli.workspace_id"
+    value = data.coder_workspace.me.id
+  }
+}
+
 resource "docker_container" "workspace" {
+  count   = data.coder_workspace.me.start_count
   image   = docker_image.workspace.name
   name    = "coder-workspace-${data.coder_workspace.me.id}"
   command = ["sh", "-c", "${local.init_script}"]
   env = [
     "DOCKER_TLS_CERTDIR=/certs"
   ]
+  volumes {
+    volume_name    = docker_volume.workspace.name
+    container_path = "/workspaces"
+  }
+  volumes {
+    volume_name    = docker_volume.docker_data.name
+    container_path = "/var/lib/docker"
+  }
   labels {
     label = "com.mgn901.coder-template-devcontainer-by-cli.owner_id"
     value = data.coder_workspace.me.owner_id
