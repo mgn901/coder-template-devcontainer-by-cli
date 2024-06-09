@@ -106,18 +106,38 @@ resource "coder_agent" "workspace" {
   }
   order = 1
   display_apps {
-    vscode = true
-    vscode_insiders = false
-    web_terminal = true
-    ssh_helper = true
+    vscode                 = false
+    vscode_insiders        = false
+    web_terminal           = true
+    ssh_helper             = true
     port_forwarding_helper = true
   }
 }
 
+resource "coder_app" "vscode" {
+  agent_id     = coder_agent.workspace.id
+  external     = true
+  icon         = "/icon/code.svg"
+  slug         = "vscode"
+  display_name = "VS Code Desktop"
+  order        = 1
+  url = join("", [
+    "vscode://coder.coder-remote/open",
+    "?owner=",
+    data.coder_workspace.me.owner_name,
+    "&workspace=",
+    data.coder_workspace.me.name,
+    "&folder=/workspaces/${lower(data.coder_workspace.me.name)}",
+    "&url=",
+    data.coder_workspace.me.access_url,
+    "&token=$SESSION_TOKEN",
+  ])
+}
+
 resource "coder_agent" "builder" {
-  arch            = data.coder_provisioner.me.arch
-  os              = data.coder_provisioner.me.os
-  order           = 2
+  arch  = data.coder_provisioner.me.arch
+  os    = data.coder_provisioner.me.os
+  order = 2
   startup_script = templatefile("${path.module}/scripts/startup.sh.tftpl", {
     workspace_name              = lower(data.coder_workspace.me.name)
     repo_owner_name             = data.coder_parameter.repo_owner_name.value
@@ -130,19 +150,19 @@ resource "coder_agent" "builder" {
   })
   startup_script_behavior = "blocking"
   display_apps {
-    vscode = false
-    vscode_insiders = false
-    web_terminal = false
-    ssh_helper = false
+    vscode                 = false
+    vscode_insiders        = false
+    web_terminal           = false
+    ssh_helper             = false
     port_forwarding_helper = false
   }
 }
 
 resource "coder_script" "builder_shutdown" {
-  agent_id = coder_agent.builder.id
+  agent_id     = coder_agent.builder.id
   display_name = "Builder: Dev Container Shutdown Process"
-  run_on_stop = true
-  script = file("${path.module}/scripts/shutdown.sh")
+  run_on_stop  = true
+  script       = file("${path.module}/scripts/shutdown.sh")
 }
 
 resource "docker_image" "workspace" {
