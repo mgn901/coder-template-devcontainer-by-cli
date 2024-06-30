@@ -29,8 +29,39 @@ variable "coder-github-auth-id" {
 }
 
 # Configure variables on creating a workspace on Coder Web UI
-data "coder_parameter" "repo_owner_name" {
+data "coder_parameter" "docker_registry_hostname" {
   order        = 1
+  name         = "docker_registry_hostname"
+  display_name = "Docker Registry Hostname"
+  type         = "string"
+  validation {
+    regex = "^(http|https):\\/\\/[-\\w\\.]+(:\\d+)?(\\/[^\\s]*)?$"
+    error = "Valid Docker Registry Hostname is required."
+  }
+  default = "https://registry.mgn901.com"
+  mutable = true
+}
+
+data "coder_parameter" "docker_registry_username" {
+  order        = 2
+  name         = "docker_registry_username"
+  display_name = "Docker Registry Username"
+  type         = "string"
+  default      = ""
+  mutable      = true
+}
+
+data "coder_parameter" "docker_registry_password" {
+  order        = 3
+  name         = "docker_registry_password"
+  display_name = "Docker Registry Password"
+  type         = "string"
+  default      = ""
+  mutable      = true
+}
+
+data "coder_parameter" "repo_owner_name" {
+  order        = 4
   name         = "repo_owner_name"
   display_name = "Git Repository Owner Name"
   type         = "string"
@@ -43,7 +74,7 @@ data "coder_parameter" "repo_owner_name" {
 }
 
 data "coder_parameter" "repo_name" {
-  order        = 2
+  order        = 5
   name         = "repo_name"
   display_name = "Git Repository Name"
   type         = "string"
@@ -56,7 +87,7 @@ data "coder_parameter" "repo_name" {
 }
 
 data "coder_parameter" "branch_name" {
-  order        = 3
+  order        = 6
   name         = "branch_name"
   display_name = "Git Branch Name"
   type         = "string"
@@ -69,7 +100,7 @@ data "coder_parameter" "branch_name" {
 }
 
 data "coder_parameter" "config_path" {
-  order        = 4
+  order        = 7
   name         = "config_path"
   display_name = "Path to devcontainer.json"
   type         = "string"
@@ -87,9 +118,10 @@ data "coder_external_auth" "github" {
 
 # Resource Definitions
 resource "coder_agent" "workspace" {
-  arch = data.coder_provisioner.me.arch
-  os   = data.coder_provisioner.me.os
-  dir  = "/workspaces/${lower(data.coder_workspace.me.name)}"
+  arch  = data.coder_provisioner.me.arch
+  os    = data.coder_provisioner.me.os
+  order = 1
+  dir   = "/workspaces/${lower(data.coder_workspace.me.name)}"
   metadata {
     display_name = "CPU Usage"
     key          = "0_cpu_usage"
@@ -104,7 +136,6 @@ resource "coder_agent" "workspace" {
     interval     = 10
     timeout      = 1
   }
-  order = 1
   display_apps {
     vscode                 = false
     vscode_insiders        = false
@@ -114,41 +145,33 @@ resource "coder_agent" "workspace" {
   }
 }
 
-resource "coder_app" "vscode" {
-  agent_id     = coder_agent.workspace.id
-  external     = true
-  icon         = "/icon/code.svg"
-  slug         = "vscode"
-  display_name = "VS Code Desktop"
-  order        = 1
-  url = join("", [
-    "vscode://coder.coder-remote/open",
-    "?owner=",
-    data.coder_workspace.me.owner_name,
-    "&workspace=",
-    data.coder_workspace.me.name,
-    "&folder=/workspaces/${lower(data.coder_workspace.me.name)}",
-    "&url=",
-    data.coder_workspace.me.access_url,
-    "&token=$SESSION_TOKEN",
-  ])
-}
+# resource "coder_app" "vscode" {
+#   agent_id     = coder_agent.workspace.id
+#   external     = true
+#   icon         = "/icon/code.svg"
+#   slug         = "vscode"
+#   display_name = "VS Code Desktop"
+#   order        = 1
+#   url = join("", [
+#     "vscode://coder.coder-remote/open",
+#     "?owner=",
+#     data.coder_workspace.me.owner_name,
+#     "&workspace=",
+#     data.coder_workspace.me.name,
+#     "&folder=/workspaces/${lower(data.coder_workspace.me.name)}",
+#     "&url=",
+#     data.coder_workspace.me.access_url,
+#     "&token=$SESSION_TOKEN",
+#   ])
+# }
 
 resource "coder_agent" "builder" {
-  arch  = data.coder_provisioner.me.arch
-  os    = data.coder_provisioner.me.os
-  order = 2
-  startup_script = templatefile("${path.module}/scripts/startup.sh.tftpl", {
-    workspace_name              = lower(data.coder_workspace.me.name)
-    repo_owner_name             = data.coder_parameter.repo_owner_name.value
-    repo_name                   = data.coder_parameter.repo_name.value
-    branch_name                 = data.coder_parameter.branch_name.value
-    github_authentication_token = data.coder_external_auth.github.access_token
-    config_path                 = data.coder_parameter.config_path.value
-    workspace_agent_token       = coder_agent.workspace.token
-    workspace_agent_script      = coder_agent.workspace.init_script
-  })
+  arch                    = data.coder_provisioner.me.arch
+  os                      = data.coder_provisioner.me.os
+  order                   = 2
+  startup_script          = file("${path.module}/scripts/startup.sh")
   startup_script_behavior = "blocking"
+  shutdown_script         = file("${path.module}/scripts/shutdown.sh")
   display_apps {
     vscode                 = false
     vscode_insiders        = false
@@ -156,13 +179,6 @@ resource "coder_agent" "builder" {
     ssh_helper             = false
     port_forwarding_helper = false
   }
-}
-
-resource "coder_script" "builder_shutdown" {
-  agent_id     = coder_agent.builder.id
-  display_name = "Builder: Dev Container Shutdown Process"
-  run_on_stop  = true
-  script       = file("${path.module}/scripts/shutdown.sh")
 }
 
 resource "docker_image" "workspace" {
@@ -207,7 +223,18 @@ resource "docker_container" "workspace" {
   command = ["sh", "-c", "${coder_agent.builder.init_script}"]
   env = [
     "CODER_AGENT_TOKEN=${coder_agent.builder.token}",
-    "DOCKER_TLS_CERTDIR=/certs"
+    "DOCKER_TLS_CERTDIR=/certs",
+    "DOCKER_REGISTRY_HOSTNAME=${data.coder_parameter.docker_registry_hostname.value}",
+    "DOCKER_REGISTRY_USERNAME=${data.coder_parameter.docker_registry_username.value}",
+    "DOCKER_REGISTRY_PASSWORD=${data.coder_parameter.docker_registry_password.value}",
+    "WORKSPACE_NAME=${lower(data.coder_workspace.me.name)}",
+    "REPO_OWNER_NAME=${data.coder_parameter.repo_owner_name.value}",
+    "REPO_NAME=${data.coder_parameter.repo_name.value}",
+    "BRANCH_NAME=${data.coder_parameter.branch_name.value}",
+    "GITHUB_AUTHENTICATION_TOKEN=${data.coder_external_auth.github.access_token}",
+    "CONFIG_PATH=${data.coder_parameter.config_path.value}",
+    "WORKSPACE_AGENT_TOKEN=${coder_agent.workspace.token}",
+    "WORKSPACE_AGENT_SCRIPT=${coder_agent.workspace.init_script}"
   ]
   volumes {
     volume_name    = docker_volume.workspace.name

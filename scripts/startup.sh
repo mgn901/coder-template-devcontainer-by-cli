@@ -3,13 +3,18 @@
 set -xe
 unset DOCKER_HOST
 
-WORKSPACE_NAME=${workspace_name}
-REPO_OWNER_NAME=${repo_owner_name}
-REPO_NAME=${repo_name}
-BRANCH_NAME=${branch_name}
-GITHUB_AUTHENTICATION_TOKEN=${github_authentication_token}
-CONFIG_PATH=${config_path}
-WORKSPACE_AGENT_TOKEN=${workspace_agent_token}
+## environments used ##
+# DOCKER_REGISTRY_HOSTNAME
+# DOCKER_REGISTRY_USERNAME
+# DOCKER_REGISTRY_PASSWORD
+# WORKSPACE_NAME
+# REPO_OWNER_NAME
+# REPO_NAME
+# BRANCH_NAME
+# GITHUB_AUTHENTICATION_TOKEN
+# CONFIG_PATH
+# WORKSPACE_AGENT_TOKEN
+# WORKSPACE_AGENT_SCRIPT
 
 if [ ! `docker stats --no-stream` ]; then
   dockerd &
@@ -20,6 +25,9 @@ if [ ! `docker stats --no-stream` ]; then
     sleep 1
   done
 fi
+
+# Login to docker registry
+docker login $DOCKER_REGISTRY_HOSTNAME -u $DOCKER_REGISTRY_USERNAME -p $DOCKER_REGISTRY_PASSWORD
 
 # Create directories for workspaces.
 mkdir -p /workspaces
@@ -33,8 +41,8 @@ cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start_banner.sh
 
 EOF0
 
-cat <<'EOF0' > /tmp/coder-devcontainer-builder/on_devcontainer_start.sh
-  ${workspace_agent_script}
+cat <<EOF0 > /tmp/coder-devcontainer-builder/on_devcontainer_start.sh
+  `echo "$WORKSPACE_AGENT_SCRIPT"`
 EOF0
 
 # Clone workspace repository (if not exists)
