@@ -22,13 +22,21 @@ data "coder_workspace_owner" "me" {}
 
 # Template administrators can set a tag of docker container image which hosts dev containers.
 variable "docker-workspace-image-tag" {
-  description = "Docker container image tag for workspace container"
-  default     = "registry.mgn901.com:5000/coder-devcontainer-workspace:latest"
+  description = "Docker container image tag for workspace containers"
+  default     = "registry-dev.mgn901.com/coder-devcontainer-workspace:latest"
 }
 
-# Coder GitHub Authentication Provider may be set for cloning private repository.
+# Coder GitHub Authentication Provider may be set to clone private repository.
 variable "coder-github-auth-id" {
   description = "ID of Coder GitHub Authentication Provider to use"
+}
+
+variable "internal-dns-network-name" {
+  description = "Name of the internal Docker Network reachable to the internal DNS nameserver"
+}
+
+variable "internal-nameserver" {
+  description = "IP address of the internal DNS nameserver to use in workspace containers"
 }
 
 ## Configure variables on creating a workspace on Coder Web UI ##
@@ -42,10 +50,10 @@ data "coder_parameter" "docker_registry_hostname" {
   display_name = "Docker Registry Hostname"
   type         = "string"
   validation {
-    regex = "^(http|https):\\/\\/[-\\w\\.]+(:\\d+)?(\\/[^\\s]*)?$"
+    regex = "^[-\\w\\.]+(:\\d+)?(\\/[^\\s]*)?$"
     error = "Valid Docker Registry Hostname is required."
   }
-  default = "https://registry.mgn901.com"
+  default = "registry-dev.mgn901.com"
   mutable = true
 }
 
@@ -100,14 +108,15 @@ data "coder_external_auth" "github" {
 ## Resource Definitions ##
 
 resource "coder_agent" "workspace" {
-  arch                    = data.coder_provisioner.me.arch
-  os                      = data.coder_provisioner.me.os
+  arch = data.coder_provisioner.me.arch
+  os   = data.coder_provisioner.me.os
+  dir  = "/workspaces/${lower(data.coder_workspace.me.name)}"
   # The startup_script waits for the dockerd to start and logs in to docker private registry.
   startup_script          = file("${path.module}/scripts/startup.sh")
   startup_script_behavior = "blocking"
   # The shutdown_script teminates the dockerd.
-  shutdown_script         = file("${path.module}/scripts/shutdown.sh")
-  
+  shutdown_script = file("${path.module}/scripts/shutdown.sh")
+
   metadata {
     display_name = "CPU Usage"
     key          = "0_cpu_usage"
@@ -144,7 +153,7 @@ resource "coder_devcontainer" "workspace" {
   count            = data.coder_workspace.me.start_count
   agent_id         = coder_agent.workspace.id
   workspace_folder = "/workspaces/${lower(data.coder_workspace.me.name)}"
-  config_path      = data.coder_parameter.config_path.value
+  config_path      = "/workspaces/${lower(data.coder_workspace.me.name)}/${data.coder_parameter.config_path.value}" # Full path is required
   depends_on       = [module.git-clone]
 }
 
@@ -213,6 +222,10 @@ resource "docker_container" "workspace" {
   image   = var.docker-workspace-image-tag
   name    = "coder-workspace-${data.coder_workspace.me.id}"
   command = ["sh", "-c", "${coder_agent.workspace.init_script}"]
+  networks_advanced {
+    name = var.internal-dns-network-name
+  }
+  dns = [var.internal-nameserver]
   env = [
     "CODER_AGENT_TOKEN=${coder_agent.workspace.token}",
     "CODER_AGENT_DEVCONTAINERS_ENABLE=true",
@@ -221,6 +234,7 @@ resource "docker_container" "workspace" {
     "DOCKER_REGISTRY_HOSTNAME=${data.coder_parameter.docker_registry_hostname.value}",
     "DOCKER_REGISTRY_USERNAME=${data.coder_parameter.docker_registry_username.value}",
     "DOCKER_REGISTRY_PASSWORD=${data.coder_parameter.docker_registry_password.value}",
+    "CODER_TEMPLATE_NAMESERVER=${var.internal-nameserver}",
   ]
   volumes {
     volume_name    = docker_volume.workspace.name
